@@ -1,0 +1,7 @@
+*.ms/
+*.ms.flagversions/
+*.fits
+*.npy
+*.jpg
+*.pdf
+__pycache__/
