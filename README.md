@@ -43,7 +43,7 @@ To begin extracting pulsar candidates, follow these steps:
 1.  **Prepare your environment:** Ensure your observation folder contains the raw data (`.lta`, `.fits`, or `.ms`).
 2.  **Calibrator List:** Place a file named `cals.list` in the parent directory. This file should contain the names of known GMRT/VLA calibrators used in your observation.
 3.  **Run the pipeline:**
-    Open your terminal and execute the orchestrator script:
+    Open your terminal and execute the SPICE script:
     ```bash
     python SPICE.py --target_dir ./path/to/observation_folder
     ```
