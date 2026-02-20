@@ -1,0 +1,17 @@
+# SPICE Pipeline Dependencies
+# Standard Scientific Stack
+numpy>=1.20.0
+scipy>=1.7.0
+matplotlib>=3.4.0
+astropy>=5.0.0
+
+# Image Processing
+Pillow>=9.0.0
+
+# Radio Astronomy Specific
+# Note: PyBDSF often requires a specific installation process
+# depending on your OS/CASA version.
+bdsf>=1.10.1
+
+# Note: CASA must be installed separately as it includes 
+# its own Python interpreter.
