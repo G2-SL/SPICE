@@ -167,17 +167,17 @@ def process_target_field(field, scan, res, refant, base_dir, dire, channel, chan
             
     return True
 
-def data_analysis(base_dir, folder, catrms=True, flux_cal='calc', refant='calc', badscan=None, badant=None, send=True):
+def data_analysis( target_dir, catrms=True, flux_cal='calc', refant='calc', badscan=None, badant=None, send=True):
     """
     SPICE execution function.
     Returns True on full success, raises exceptions on critical failures, or returns False on soft missing data.
     """
     if badscan is None: badscan = []
     if badant is None: badant = []
+    base_dir = os.path.dirname(target_dir)
+    folder = os.path.basename(target_dir)
     
     start = time.time()
-    os.chdir(base_dir)
-    target_dir = os.path.join(base_dir, folder)
     
     if not os.path.isdir(target_dir):
         raise FileNotFoundError(f"Error: Target directory '{target_dir}' does not exist.")
@@ -224,8 +224,8 @@ def data_analysis(base_dir, folder, catrms=True, flux_cal='calc', refant='calc',
 
     if not cal_field or not tar_field:
         os.chdir(base_dir)
-        shutil.rmtree(folder1)
-        error_msg = f'{folder1} # missing calibrators or targets. Cals: {cal_field}, Targets: {tar_field}\n'
+        shutil.rmtree(folder)
+        error_msg = f'{folder} # missing calibrators or targets. Cals: {cal_field}, Targets: {tar_field}\n'
         with open('pulsar_summary.txt', "a") as f:
             f.write(error_msg)
         msmd.close()
@@ -278,7 +278,7 @@ def data_analysis(base_dir, folder, catrms=True, flux_cal='calc', refant='calc',
     sourcedec = []
     
     os.chdir(base_dir)
-    success_msg = f'{folder1} # successfully analysed. Found {pcan} pulsar candidates from {len(sourcedec)} scintillators. Total time = {round((end - start)/3600, 2)} hrs\n'
+    success_msg = f'{folder} # successfully analysed. Found {pcan} pulsar candidates from {len(sourcedec)} scintillators. Total time = {round((end - start)/3600, 2)} hrs\n'
     with open('pulsar_summary.txt', "a") as f:
         f.write(success_msg)
         
@@ -287,8 +287,7 @@ def data_analysis(base_dir, folder, catrms=True, flux_cal='calc', refant='calc',
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Main execution script SPICE.")
-    parser.add_argument("--base_dir", type=str, required=True, help="Path to the base analysis directory.")
-    parser.add_argument("--folder", type=str, required=True, help="Target observation folder to process.")
+    parser.add_argument("--target_dir", type=str, required=True, help="Target observation to process.")
     parser.add_argument("--flux_cal", type=str, default="calc", help="Flux calibrator override.")
     parser.add_argument("--refant", type=str, default="calc", help="Reference antenna override.")
     
@@ -296,8 +295,7 @@ if __name__ == "__main__":
     
     try:
         data_analysis(
-            base_dir=args.base_dir,
-            folder1=args.folder,
+            target_dir=args.target_dir,
             flux_cal=args.flux_cal,
             refant=args.refant
         )

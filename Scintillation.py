@@ -1,6 +1,4 @@
 """
-scintillation.py
-
 Contains functions for generating dynamic spectra from measurement sets
 and fitting 2D Gaussians for pulsar scintillation analysis.
 """
