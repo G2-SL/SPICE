@@ -12,7 +12,7 @@ import numpy as np
 from astropy.table import Table
 from astropy import units as u
 
-# External modules from your pipeline
+# External modules
 import bdsf
 import casatasks as ct
 from casatasks import listobs, flagdata, gaincal, bandpass, applycal
@@ -38,7 +38,7 @@ def process_target_field(field, scan, res, refant, base_dir, dire, channel, chan
     msfile = os.path.join(dire, 'out.ms')
     
     if len(file2) == 0:
-        # Assuming baseline and flagant are imported from your flagging module
+        # Assuming baseline and flagant are imported from flagging module
         from flagging import baseline, flagant
         baselr = baseline(msfile)
         badbase = flagant(msfile, [int(scan)], channel, baselr)[0]
@@ -235,8 +235,327 @@ def data_analysis( target_dir, catrms=True, flux_cal='calc', refant='calc', bads
     cal_scan, tar_scan = [], []
     for i in cal_field: cal_scan += list(msmd.scansforfield(i))
     for i in tar_field: tar_scan += list(msmd.scansforfield(i))
-    intime = msmd.exposuretime(scan=cal_scan[0])['value']
+    bandwidth=round(msmd.bandwidths(0)*1e-6)
+    if bandwidth==0: bandwidth=round(msmd.bandwidths(0))
+    channel=msmd.nchan(0); chanwidth=round(bandwidth*1e3/channel,1); ctrlfreq=msmd.meanfreq(0)
+    intime=msmd.exposuretime(scan=cal_scan[0])['value']; freqs=msmd.chanfreqs(0)
     msmd.close()
+    
+    f os.path.isfile('filename')==False:
+        flagdata(msfile,mode="clip", clipminmax=[0,100],clipoutside=True,clipzeros=True)
+        in_ch=int(1*channel/100)
+        badchans=['0:'+str(i) for i in range(in_ch)]+['0:'+str(i) for i in range(channel-in_ch,channel)]
+        badchans=[]
+        rfifreq=[0.36E09,0.3796E09,0.486E09,0.49355E09,0.8808E09,0.885596E09,0.7646E09,0.769092E09] # always bad
+        msmd.open(msfile)
+        freqs=msmd.chanfreqs(0)
+        antenna_names=np.array(['C00', 'C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C08', 'C09', 'C10', 'C11', 'C12', 'C13', 'C14', 'E02', 'E03', 'E04', 'E05', 'E06', 'S01', 'S02', 'S03', 'S04', 'S06', 'W01', 'W02', 'W03', 'W04', 'W05', 'W06'])
+        
+        for j in range(0,len(rfifreq)-1,2):
+            for i in range(0,len(freqs)):
+                if (freqs[i] > rfifreq[j] and freqs[i] < rfifreq[j+1]):
+                        badchans.append('0:'+str(i))
+        if badchans!=[]:
+            chanflag = str(', '.join(badchans))
+            flgcmd = ["mode='manual' spw='%s'" % (chanflag)]
+            flagdata(msfile,mode='list', inpfile=flgcmd)
+
+        total_scans=range(1,msmd.nscans()+1)
+        for i in total_scans:
+            totime=len(msmd.timesforscans(scans=i))
+            if totime>10:
+                flagdata(msfile, mode='quack',scan=str(i),quackinterval=2, quackmode='beg')
+                flagdata(msfile, mode='quack',scan=str(i),quackinterval=2, quackmode='endb')
+            if i in cal_scan:
+                if totime>25:
+                    flagdata(msfile, mode='quack',scan=str(i),quackinterval=intime*6, quackmode='beg')
+            if i in tar_scan:
+                if totime<25: badscan.append(i)
+            if totime<2:
+                badscan.append(i)
+        msmd.close()
+        
+        cal_scan=list(set(cal_scan)-set(badscan))
+        
+        total_scans=list(set(total_scans)-set(badscan))
+        chan=[]
+        for i in total_scans:
+            a11=flagtime(msfile,i)
+            if len(a11)==2:
+                cha1=flagchannel(msfile,channel,i)
+                chan.append(cha1)
+                ct.split(msfile,outputvis='outcal'+str(i)+'.ms',datacolumn="data",timerange=a11[1],correlation="RR,LL")
+                if os.path.isdir('ou.ms.flagversions'): shutil.rmtree('ou.ms.flagversions')
+        shutil.rmtree('ou.ms')
+        file=glob.glob('outcal'+'*'+'.ms'); msfile='out3.ms'
+        ct.concat(vis=file,concatvis=msfile)
+        for i in file: shutil.rmtree(i)
+        msmd.open(msfile)
+        cal_scan=[];tar_scan=[]
+        for i in cal_field:
+            cal_scan+=list(msmd.scansforfield(i))
+        for i in tar_field:
+            tar_scan+=list(msmd.scansforfield(i))
+        msmd.close()
+        total_scans=cal_scan+tar_scan
+        goodsc=','.join(map(str, total_scans))
+        cen_antenna_names=['C00', 'C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C08', 'C09', 'C10', 'C11', 'C12', 'C13', 'C14']
+        out_antenna_names=['E02', 'E03', 'E04', 'E05', 'E06',
+                 'S01', 'S02', 'S03', 'S04', 'S06',
+                 'W01', 'W02', 'W03', 'W04', 'W05', 'W06']
+        
+        badant+=flagantbase(msfile,cal_scan,channel,antenna_names,sigma=1.8)
+        badcenant=[]; badoutant=[]
+        for i in badant:
+            for j in cen_antenna_names:
+                if j==i:
+                    badcenant.append(i)
+            for j in out_antenna_names:
+                if j==i:
+                    badoutant.append(i)
+        antenna_names=[item for item in antenna_names if item not in badant]
+        goodcentant=list(set(cen_antenna_names)-set(badcenant))
+        goodoutant=list(set(out_antenna_names)-set(badoutant))
+        baselr=[]
+        for i in range(len(antenna_names)):
+            for j in range(len(antenna_names)):
+                if j>i:
+                    if (antenna_names[i] in goodcentant) & (antenna_names[j] in goodcentant):
+                        pass
+                    else:
+                        baselr.append(f'{antenna_names[i]}&{antenna_names[j]}')        
+        ba=';'.join(map(str, baselr))
+        
+        chan=np.array(chan); chan=np.nanmean(chan,axis=0); chan=np.nan_to_num(chan,nan=0)
+        slices = tuple(slice(idx.min(), idx.max() + 1) for idx in np.nonzero(chan))
+        chan=chan[slices]; channel=len(chan)
+        spw='0:'+str(int(chan[0]))+'~'+str(int(chan[-1]))
+        msfile='out1.ms'
+        ct.split(vis='out3.ms',outputvis=msfile,datacolumn="data",antenna=ba,spw=spw,scan=goodsc)
+        shutil.rmtree('out3.ms')
+        rc=listobs(vis=msfile, listfile='obslist1.txt', verbose=True, overwrite=True)
+        
+
+        flagdata(msfile, mode='tfcrop')
+        array=[]
+        ms.open(msfile)
+        for i in cal_scan:
+            a=ms.statistics(column="data", complex_value='amplitude', scan=str(i),doquantiles=False)['']
+            array.append([i,a['npts']])
+        a=np.array(array); a= a[np.argsort( a[:,1])[::-1]]
+        if flux_cal=='calc': flux_cal=int(a[0,0])
+        
+        if refant=='calc':
+            array2=[]
+            for i in range(len(goodoutant)):
+                a=ms.statistics(column="data", complex_value='phase', scan=str(flux_cal),baseline=str(goodoutant[i]),doquantiles=False)['']
+                array2.append([i,a['stddev'],a['npts']])
+            a=np.array(array2)
+            a= a[np.argsort( a[:,2])[::-1]]
+            std=a[:,1]; ant=a[0,0]
+            for i in range(5):
+                if std[i+1]<std[i]:
+                    ant=a[i+1,0]
+                else:
+                    break
+            refant=goodoutant[int(ant)]
+        ms.close()
+
+    
+        # metadata
+        msmd.open(msfile)
+        bcn = msmd.fieldsforscan(flux_cal, True)
+        msmd.close()
+
+        with open('filename',"a") as f:
+            f.write(fr'# Observation no. {folder1}' +'\n'+
+                    fr'# channel =   {channel}, bandwidth=   {bandwidth} MHz, channelwidth=   {chanwidth} kHz'+
+                '\n'+f'# integration time=   {intime} sec, central frequency=   {round(ctrlfreq*1e-6)} MHz'+'\n'+
+               f'# calibrator={cal_field}'+'\n'+fr'# Bad antenna   {badant}'+'\n'+
+        f'# targets={tar_field}'+'\n'+
+        fr'# flux calibrator is of field {bcn} with scan {int(flux_cal)}' +'\n'+
+        fr'# Referance antenna is {refant}' +'\n')
+        #shutil.copytree('out1.ms','out4.ms')
+
+        cal_scan=list(set(cal_scan)-set(badscan))
+        spw='0:'+str(int(0.5*channel))+'~'+str(int(.6*channel))
+        pac=list(set(cal_scan)-set([int(flux_cal)]))
+        pc=','.join(map(str, pac))
+        for i in range(2):
+            gaincal(msfile, caltable='phase.cal', scan=str(flux_cal), refant=refant, spw=spw,
+                gaintype='G',calmode='p', solint='int',minsnr=5)
+            gaincal(msfile,caltable='delay.cal', scan=str(flux_cal),refant=refant,spw=spw,gaintype='K', 
+            solint='inf',minsnr=5,gaintable=['phase.cal'])
+            bandpass(msfile,caltable='bandpass.cal',scan=str(flux_cal),spw='',refant=refant, minsnr=5,
+                 solint='inf',bandtype='B',gaintable=['phase.cal','delay.cal'])
+            gaincal(msfile,caltable='gain.cal',scan=str(flux_cal),spw=spw,minsnr=5,
+                solint='int',refant=refant,gaintype='G',calmode='ap',solmode='R',
+                gaintable=['delay.cal','bandpass.cal'])
+
+            applycal(msfile, scan=str(flux_cal), gaintable=['delay.cal','gain.cal','bandpass.cal'],
+                 calwt=False,parang=False)
+            if len(pac)>0:
+                gaincal(msfile,caltable='gain.cal',scan=pc,spw=spw,minsnr=5,
+                solint='int',refant=refant,gaintype='G',calmode='ap',solmode='R',
+                gaintable=['delay.cal','bandpass.cal'],interp=['linear',''],append=True)
+                applycal(msfile,scan=pc, gaintable=['delay.cal','gain.cal','bandpass.cal'],
+                 gainfield=['nearest','nearest',''],interp=['nearest','nearest',''],calwt=False,parang=False)
+            flagdata(msfile, mode='tfcrop',datacolumn='corrected')
+            flagdata(msfile, mode='rflag',datacolumn='corrected')
+            for k in cal_scan:
+                phaseflagging(msfile,k)
+            shutil.rmtree('phase.cal'); shutil.rmtree('delay.cal');shutil.rmtree('gain.cal');shutil.rmtree('bandpass.cal')
+        
+        for i in cal_scan:
+            baselflag(msfile,i,5,'corrected',1)
+            ms.open(msfile)
+            ms.select({'scan_number':[int(i)]})
+            d1=ms.getdata(["flag"], ifraxis=True)
+            visi=np.where(d1['flag']==False,1,np.nan)
+            a1,a2,a3,a4=visi.shape
+            antmean=[]
+            for j in range(a3):
+                antmean.append(np.nanmean(visi[:,:,j,:]))
+            ms.close()
+            if len(np.where(np.array(antmean)>0)[0])/len(antmean)<0.4:
+                badscan.append(i)
+
+        cal_scan=list(set(cal_scan)-set(badscan))
+        tar_scan=list(set(tar_scan)-set(badscan))
+        total_scans=list(set(total_scans)-set(badscan))
+        goodsc=','.join(map(str, total_scans))
+
+        if len(cal_scan)==0:
+            os.chdir('/Data/jsalal/analysis/folder')
+            shutil.rmtree(folder1)
+            with open('pulsar.txt',"a") as f:
+                f.write(fr'{folder1} # has all calibrator flagged' +'\n')
+            return 1
+
+        array2=[]
+        ms.open(msfile)
+        for i in range(len(goodoutant)):
+            a=ms.statistics(column="corrected", complex_value='phase', scan=str(flux_cal),baseline=str(goodoutant[i]),doquantiles=False)['']
+            array2.append([i,a['stddev'],a['npts']])
+        ms.close()
+        a=np.array(array2)
+        a= a[np.argsort( a[:,2])[::-1]]
+        std=a[:,1]; ant=a[0,0]
+        for i in range(5):
+            if std[i+1]<std[i]:
+                ant=a[i+1,0]
+            else:
+                break
+        refant=goodoutant[int(ant)]
+
+        
+        with open('filename',"a") as f:
+            f.write(fr'# flagged scan {list(set(badscan))}' +'\n'+
+                    fr'# Referance antenna is {refant}' +'\n')
+        
+        
+        ct.split(vis='out1.ms',outputvis='out.ms',datacolumn="all",scan=goodsc)
+        shutil.rmtree('out1.ms'); shutil.rmtree('out1.ms.flagversions')
+        #shutil.rmtree('out4.ms')
+    else:
+        files = glob.glob("filename")
+        lines=[]
+        with open(files[0], encoding='utf8') as f:
+            for line in f:
+                lines.append(line)
+        refant=lines[9][-4:-1]
+                
+    
+    if os.path.isfile('bandpasscalibrator.pdf')==False:
+        msfile='out.ms'
+        spw='0:'+str(int(0.4*channel))+'~'+str(int(.6*channel))
+        tr=','.join(map(str, tar_field))
+        pac=list(set(cal_scan)-set([int(flux_cal)]))
+        pc=','.join(map(str, pac))
+
+        #  target flagging calibration
+        for i in range(3):
+            gaincal(msfile, caltable='phase.cal', scan=str(flux_cal), refant=refant, spw=spw,
+            gaintype='G',calmode='p', solint='int',minsnr=5)
+            gaincal(msfile,caltable='delay.cal', scan=str(flux_cal),refant=refant,spw=spw,gaintype='K', 
+            solint='inf',minsnr=5,gaintable=['phase.cal'])
+            bandpass(msfile,caltable='bandpass.cal',scan=str(flux_cal),spw='',refant=refant, minsnr=5,
+                 solint='inf',bandtype='B',gaintable=['phase.cal','delay.cal'])
+            gaincal(msfile,caltable='gain.cal',scan=str(flux_cal),spw=spw,minsnr=5,
+                solint='int',refant=refant,gaintype='G',calmode='ap',solmode='R',
+                gaintable=['delay.cal','bandpass.cal'])
+            
+            applycal(msfile, scan=str(flux_cal), gaintable=['delay.cal','gain.cal','bandpass.cal'],
+                 calwt=False,parang=False)
+            if len(pac)>0:
+                gaincal(msfile,caltable='gain.cal',scan=pc,spw=spw,minsnr=5,
+                solint='int',refant=refant,gaintype='G',calmode='ap',solmode='R',
+                gaintable=['delay.cal','bandpass.cal'],interp=['linear',''],append=True)
+                applycal(msfile,scan=pc, gaintable=['delay.cal','gain.cal','bandpass.cal'],
+                 gainfield=['nearest','nearest',''],interp=['nearest','nearest',''],calwt=False,parang=False)
+            applycal(msfile,field=tr,gaintable=['delay.cal','gain.cal','bandpass.cal'],
+                 gainfield=['nearest','nearest',''], interp=['nearest','nearest',''],
+                 calwt=False,parang=False)
+            flagdata(msfile, mode='tfcrop',datacolumn='corrected')
+            flagdata(msfile, mode='rflag',datacolumn='corrected')
+            phaseflagging(msfile,str(flux_cal))
+            for k in pac:
+                phaseflagging(msfile,k)
+            if i>1:flagdata(msfile, mode='extend',datacolumn='corrected',growtime=80.0, growfreq=80.0,growaround=True)
+            shutil.rmtree('phase.cal'); shutil.rmtree('delay.cal');shutil.rmtree('gain.cal');shutil.rmtree('bandpass.cal')
+            
+            if i==1:
+                msmd.open(msfile)
+                antenna_names=msmd.antennanames()
+                msmd.close()
+                flagged_antenna=flagant(msfile,cal_scan,channel,antenna_names)
+                baselr=baseline(msfile,badant=flagged_antenna[0])
+                flagged_base=flagant(msfile,cal_scan,channel,baselr)
+                badant=flagged_antenna[0]; badbase=flagged_base[0]
+                baselr=baseline(msfile,badant,badbase)
+                ba=';'.join(map(str, baselr))
+                ct.split(msfile,outputvis='out2.ms',datacolumn="corrected",antenna=ba)
+                shutil.rmtree(msfile); os.rename('out2.ms',msfile)
+                for i in range(len(flagged_antenna[2])):
+                    ba=';'.join(map(str, flagged_antenna[1][i]))
+                    if flagged_antenna[2][i] - 1 in tar_scan:
+                        flagdata(msfile,mode="manual", antenna=ba,scan=str(flagged_antenna[2][i]-1))
+                    if flagged_antenna[2][i] + 1 in tar_scan:
+                        flagdata(msfile,mode="manual", antenna=ba,scan=str(flagged_antenna[2][i]+1))
+                for i in range(len(flagged_base[2])):
+                    ba=';'.join(map(str, flagged_base[1][i]))
+                    if flagged_base[2][i] - 1 in tar_scan:
+                        flagdata(msfile,mode="manual", antenna=ba,scan=str(flagged_base[2][i]-1))
+                    if flagged_base[2][i] + 1 in tar_scan:
+                        flagdata(msfile,mode="manual", antenna=ba,scan=str(flagged_base[2][i]+1))
+        for k in cal_scan:
+            plotms(msfile,plotfile='2atc'+str(k)+'.png',scan=str(k),ydatacolumn='corrected',
+               showgui=False,highres=False,width=600,height=350,overwrite=True)
+            plotms(msfile,plotfile='2afc'+str(k)+'.png',xaxis='frequency',scan=str(k),ydatacolumn='corrected',
+               showgui=False,highres=False,width=600,height=350,overwrite=True)
+            plotms(msfile,plotfile='2uac'+str(k)+'.png',xaxis='UVwave',scan=str(k),ydatacolumn='corrected',
+               showgui=False,highres=False,width=600,height=350,overwrite=True)
+            plotms(msfile,plotfile='2pac'+str(k)+'.png',xaxis='Phase',scan=str(k),xdatacolumn='corrected',ydatacolumn='corrected',
+               showgui=False,highres=False,width=600,height=350,overwrite=True)
+            file=glob.glob('*'+str(k)+'.png')
+            imagl=[]
+            for i in file:
+                a1=Image.open(i)
+                imagl.append(a1.convert('RGB'))
+            if k==int(flux_cal):
+                imagl[0].save('bandpasscalibrator.pdf',save_all=True, append_images=imagl[1:])
+            else:
+                imagl[0].save('calibrator'+str(k)+'.pdf',save_all=True, append_images=imagl[1:])
+            for a in file: os.remove(a)
+        
+            
+        b=np.array(['#sourceid','RA','DEC','isnr','flux','dsnoise','PPR',
+                   'sfreq','esfreq','ampf','eampf','stime','estime','ampt','eampt','modulation','csnr','ctrlfreq','bandwidth','chanwidth','ttime','subint','MJD','sample'])
+        with open('filename','ab') as f:
+            np.savetxt(f, b, fmt='%18s',delimiter=',', newline='')
+            f.write(b'\n')
+        #shutil.rmtree('out2.ms'); shutil.rmtree('out2.ms.flagversions')
+        shutil.rmtree('out.ms.flagversions')
 
     # 3. Process Target Fields
     for i in tar_field:
