@@ -11,7 +11,8 @@ Pulsars are point-like sources that exhibit high modulation in flux across time 
 * **End-to-End Automation:** Converts raw GMRT data (`.lta`, `.fits`) into calibrated Measurement Sets (MS).
 * **Precision Flagging:** Multi-stage flagging (time, channel, and baseline) to mitigate terrestrial RFI.
 * **Blind Source Extraction:** Integrated with **PyBDSF** to identify high-SNR point sources in continuum images.
-* **Scintillation Modeling:** * Generates dynamic spectra from calibrated visibilities.
+* **Scintillation Modeling:**
+    * Generates dynamic spectra from calibrated visibilities.
     * Computes 2D autocorrelations to determine scintillation bandwidth ($\Delta\nu_d$) and timescale ($\Delta t_d$).
     * Performs 2D Gaussian fitting to extract DISS parameters and modulation indices.
 * **Diagnostic Visualization:** Generates plots for every candidate, showing dynamic spectra alongside their ACF fits.
